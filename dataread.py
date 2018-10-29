@@ -1,4 +1,3 @@
-
 #From https://www.earthdatascience.org/courses/earth-analytics-python/lidar-raster-data/open-lidar-raster-python/
 import rasterio as rio
 from rasterio.merge import merge
