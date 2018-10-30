@@ -1,5 +1,6 @@
 
 #From https://www.earthdatascience.org/courses/earth-analytics-python/lidar-raster-data/open-lidar-raster-python/
+import random
 import rasterio as rio
 from rasterio.merge import merge
 from rasterio.plot import show
@@ -64,10 +65,10 @@ def step_in_dir(coord, dist, direction):
     return (360*lat2, 360*lon2)
 
 def slope_points(coord1, coord2):
-    return -(elevation_at_coord(coord1, L)-elevation_at_coord(coord2, L)) / dist(coord1, coord2)
+    return (elevation_at_coord(coord1, L)-elevation_at_coord(coord2, L)) / dist(coord1, coord2)
 
 def maxslope(coord):
-    slope = 0
+    slope = -100000
     bestangle = None
     bestpoint = None
     for direction in range(0, 360, 10):
@@ -80,26 +81,79 @@ def maxslope(coord):
                 bestpoint = newcoord
     return slope, bestangle, bestpoint
 
-def targetslope(coord, desired):
+def target_slope(coord, desired):
     r = maxslope(coord)
-    if tan(desired) <= r[0]:
-        direction = r[1] + acos(tan(desired)/r[0])
+    if desired <= r[0]:
+        direction = r[1] + acos(desired/r[0])
         newcoord = step_in_dir(coord, 20, direction)
     else:
         newcoord = r[2]
     return newcoord
 
-def eulers(point, desired, n=100):
+def eulers(point, desired, n=50):
     points = [point]
     curdirection = 0
     for __ in range(n):
-        point = targetslope(point, desired)
+        point = target_slope(point, desired)
         points.append(point)
     return points
 
-def plotpoints(points):
-    mat = L[0][1]
+def plot_points(pointsL):
+    mat = np.concatenate((L[1][1], L[0][1]))[1800:5400]
     plt.matshow(mat)
-    Z = [L[0][0].index(*i[::-1]) for i in points]
-    plt.plot(*list(zip(*Z)), 'r-')
+    for points, color in pointsL:
+        Z = [L[1][0].index(*i[::-1])[::-1] for i in points]
+        Z = list(zip(*[(i,j-1800) for i,j in Z]))
+        plt.plot(*Z, color=color, linestyle='-')
     plt.show()
+
+RANGES = {'b':[.06, .25], 'i':[.25, .40], 'e':[.40, 1]}
+def randdesired(difficulty):
+    desiredrange = RANGES[difficulty[0]]
+    return random.random() * (desiredrange[1] - desiredrange[0]) + desiredrange[0]
+
+COLORS = {'b':'g', 'i':'b', 'e':'k'}
+def points_and_color(coord, difficulty):
+    return (eulers(coord, randdesired(difficulty)), COLORS[difficulty[0]])
+
+def full_ski_lift(liftcoord, n=20, N=(5, 10, 10), difficulties='bie'):
+    pointsL = []
+    for i in range(n):
+        coord = ((liftcoord[0][0]*i + liftcoord[1][0]*(n-1-i))/(n-1),
+                 (liftcoord[0][1]*i + liftcoord[1][1]*(n-1-i))/(n-1))
+        for difficulty in difficulties:
+            pass#difficulty = random.choice(['b', 'i', 'i', 'e', 'e'])
+            pointsL.append(points_and_color(coord, difficulty))
+    actualpoints = []
+    for difficulty in range(len(N)):
+        bests = [pointsL[difficulty]]
+        bestscores = [score(pointsL[difficulty][0], difficulties[difficulty])]
+        for points, color in pointsL[difficulty::len(N)]:
+            if score(points, difficulties[difficulty]) < max(bestscores):
+                i = bestscores.index(max(bestscores))
+                bestscores.remove(bestscores[i])
+                bests.remove(bests[i])
+                bestscores.append(score(points, difficulties[difficulty]))
+                bests.append((points,color))
+            elif len(bestscores) < N[difficulty]:
+                bestscores.append(score(points, difficulties[difficulty]))
+                bests.append((points,color))
+        actualpoints.extend(bests)
+    plot_points(actualpoints)
+
+def score(points, difficulty):
+    out = 0
+    for point in points:
+        slope = maxslope(point)[0]
+        if slope < RANGES[difficulty[0]][0]:
+            out += RANGES[difficulty[0]][0]/slope
+        if slope > RANGES[difficulty[0]][1]:
+            out += slope/RANGES[difficulty[0]][1]
+    return out
+
+#F=Francis Peak (nearby)
+F = (41 + 1/60 + 59/3600, -(111 + 50/60 + 18/3600))
+Fp = (F[0], F[1]+1/60)
+Fpp = (Fp[0]+5/60, Fp[1]-.5/60)
+Fp = (Fp[0], Fp[1]+.5/60)
+full_ski_lift([Fp, Fpp],10)
